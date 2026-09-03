@@ -1,0 +1,187 @@
+{
+  "name": "kandidaat verrijking",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "15bd88fe-63db-404e-a60f-99fd6c24e124",
+              "name": "=briefing",
+              "value": "=🧑 KANDIDAAT-BRIEFING\n\nNaam: {{ $json.naam }}\nFunctie: {{ $json.functie }}\nContact: {{ $json.email }} · {{ $json.telefoon }}\n\n📊 FIT-SCORE: {{ $json.fit_score }}/10\n{{ $json.fit_toelichting }}\n\n📝 SAMENVATTING\n{{ $json.samenvatting }}\n\n💼 PROFIEL\nErvaring: {{ $json.jaren_ervaring }} jaar · Niveau: {{ $json.seniority }}\nSkills: {{ $json.skills.join(', ') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        720,
+        -16
+      ],
+      "id": "44ec9ea0-7fe1-4301-91a4-1349fcbe1963",
+      "name": "briefing"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sollicitatie",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -416,
+        -16
+      ],
+      "id": "fdbd053b-6077-4b0d-858e-ed8c86a87f21",
+      "name": "sollicitatie in",
+      "webhookId": "9365bb7c-7104-48be-bc29-22589f0d0d50"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "247dafaf-af10-4531-ae48-86696fdc8ade",
+              "name": "naam",
+              "value": "={{ $json.body.naam }}",
+              "type": "string"
+            },
+            {
+              "id": "2bbc2101-747f-4a7b-b0be-346aeade2f44",
+              "name": "email",
+              "value": "={{ $json.body.email }}",
+              "type": "string"
+            },
+            {
+              "id": "471788c9-ff08-4538-8fb0-81c6cc2c9863",
+              "name": "functie",
+              "value": "={{ $json.body.functie }}",
+              "type": "string"
+            },
+            {
+              "id": "1c0891f5-e6c0-4e6b-aa5d-8ac4c3d004f6",
+              "name": "telefoon",
+              "value": "={{ $json.body.telefoon }}",
+              "type": "string"
+            },
+            {
+              "id": "5c28f141-2417-416d-b8eb-5bd451768172",
+              "name": "motivatie",
+              "value": "={{ $json.body.motivatie }}",
+              "type": "string"
+            },
+            {
+              "id": "93141cae-b95a-413f-8c8f-efa0845ebd65",
+              "name": "cv_tekst",
+              "value": "={{ $json.body.cv_tekst }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -80,
+        -16
+      ],
+      "id": "58eae1fd-ae12-45fb-9144-ba3ae6357bce",
+      "name": "normaliseren"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"mistral\",\n  \"stream\": false,\n  \"format\": \"json\",\n  \"prompt\": \"Je bent een recruitment-assistent. Analyseer de volgende sollicitant en geef UITSLUITEND geldige JSON terug, zonder extra tekst. Gebruik exact deze structuur: {\\\"samenvatting\\\": \\\"2-3 zinnen over de kandidaat\\\", \\\"jaren_ervaring\\\": getal, \\\"skills\\\": [\\\"lijst\\\", \\\"van\\\", \\\"skills\\\"], \\\"seniority\\\": \\\"junior|medior|senior\\\", \\\"fit_score\\\": getal 1 tot 10, \\\"fit_toelichting\\\": \\\"1 zin waarom deze score\\\"}\\n\\nSollicitant:\\nNaam: {{ $json.naam }}\\nFunctie waarop gesolliciteerd: {{ $json.functie }}\\nMotivatie: {{ $json.motivatie }}\\nCV: {{ $json.cv_tekst }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        -16
+      ],
+      "id": "4c4eb1d3-db57-4a97-af00-3979d1e1159e",
+      "name": "verrijking"
+    },
+    {
+      "parameters": {
+        "jsCode": "// De AI-verrijking zit als tekst-string in het 'response'-veld.\n// We parsen die naar echte velden, met een vangnet als het geen geldige JSON is.\nconst ruweTekst = $json.response;\n\nlet verrijking;\ntry {\n  verrijking = JSON.parse(ruweTekst);\n} catch (e) {\n  // Model gaf geen geldige JSON terug: we geven een nette foutstatus door\n  // in plaats van de flow te laten crashen.\n  verrijking = {\n    samenvatting: \"Kon AI-output niet lezen als JSON.\",\n    jaren_ervaring: null,\n    skills: [],\n    seniority: \"onbekend\",\n    fit_score: null,\n    fit_toelichting: ruweTekst\n  };\n}\n\n// We halen de originele kandidaatgegevens er weer bij via de Set-node,\n// zodat naam/email/telefoon samen met de verrijking doorgaan.\nconst kandidaat = $('normaliseren').item.json;\n\nreturn {\n  naam: kandidaat.naam,\n  email: kandidaat.email,\n  telefoon: kandidaat.telefoon,\n  functie: kandidaat.functie,\n  samenvatting: verrijking.samenvatting,\n  jaren_ervaring: verrijking.jaren_ervaring,\n  skills: verrijking.skills,\n  seniority: verrijking.seniority,\n  fit_score: verrijking.fit_score,\n  fit_toelichting: verrijking.fit_toelichting\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        -16
+      ],
+      "id": "e5b08f5f-203c-43be-aa74-cecf43411083",
+      "name": "response parsen"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "sollicitatie in": {
+      "main": [
+        [
+          {
+            "node": "normaliseren",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normaliseren": {
+      "main": [
+        [
+          {
+            "node": "verrijking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "verrijking": {
+      "main": [
+        [
+          {
+            "node": "response parsen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "response parsen": {
+      "main": [
+        [
+          {
+            "node": "briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0b2da26f-9c6b-453c-88db-8de0d7eca220",
+  "meta": {
+    "instanceId": "b1a1ea39e2b0b0221a47f8069b2f6ebf257a1b287ecd70fb39d5bdde110a7866"
+  },
+  "nodeGroups": [],
+  "id": "f2zNtixuQ2mEc2YK",
+  "tags": []
+}
